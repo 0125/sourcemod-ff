@@ -4,6 +4,11 @@
 
 #pragma newdecls required
 
+//Various global variables
+int DamageCache[MAXPLAYERS+1][MAXPLAYERS+1]; //Used to temporarily store Friendly Fire Damage between teammates
+Handle FFTimer[MAXPLAYERS+1]; //Used to be able to disable the FF timer when they do more FF
+bool FFActive[MAXPLAYERS+1]; //Stores whether players are in a state of friendly firing teammates
+
 public Plugin myinfo =
 {
 	name = "Reverse Friendly Fire",
@@ -46,14 +51,12 @@ OnTakeDamage thinks there was damage done
 */
 public Action OnTakeDamageAlive(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &weapon, float damageForce[3], float damagePosition[3])
 {
-	int VictimId = victim;
-	int AttackerId = attacker;
-	int VictimDmg = RoundToNearest(damage);
-	int VictimDmgRemaining = VictimDmg
+	int victimDmg = RoundToNearest(damage);
+	int victimDmgRemaining = victimDmg
 	
-	char VictimName[64];
-	char AttackerName[64];
-	char AttackerWeapon[64];
+	char victimName[64];
+	char attackerName[64];
+	char attackerWeapon[64];
 	
 	/*
 	PrintToServer("victim: %d", victim)
@@ -66,44 +69,38 @@ public Action OnTakeDamageAlive(int victim, int &attacker, int &inflictor, float
 	PrintToServer("damagePosition: %f", damagePosition)
 	*/
 	
-	if ( (!IsValidEntity(VictimId)) || (!IsValidEntity(AttackerId)) ) // are victim & attacker invalid entities?
+	if ( (!IsValidEntity(victim)) || (!IsValidEntity(attacker)) ) // are victim & attacker invalid entities?
 	{
 		// PrintToChatAll("invalid Victim or attacker Id")
 		return Plugin_Continue
 	}
 	
-	if ( (!IsValidClient(AttackerId)) || (!IsValidClient(AttackerId)) ) // are victim & attacker invalid clients?
+	if ( (!IsValidClient(attacker)) || (!IsValidClient(attacker)) ) // are victim & attacker invalid clients?
 	{
 		// PrintToChatAll("Victim or attacker is not a valid client")
 		return Plugin_Continue
 	}
 	
 	// Get client info after valid client check. Using an invalid client id for certain GetClient fuctions causes an error and stops flow
-	GetClientName(VictimId, VictimName, sizeof(VictimName))
-	GetClientName(AttackerId, AttackerName, sizeof(AttackerName))
-	GetClientWeapon(AttackerId, AttackerWeapon, sizeof(AttackerWeapon)) 
+	GetClientName(victim, victimName, sizeof(victimName))
+	GetClientName(attacker, attackerName, sizeof(attackerName))
+	GetClientWeapon(attacker, attackerWeapon, sizeof(attackerWeapon)) 
 	
-	if (IsPlayerIncapped(AttackerId))
+	if (IsPlayerIncapped(attacker))
 	{
 		// PrintToChatAll("attacker is incapped")
 		return Plugin_Handled; // do not apply damage to victim
 	}
 	
-	if ( (GetClientTeam(VictimId) != GetClientTeam(AttackerId)) ) // are victim & attacker not on the same team?
+	if ( (GetClientTeam(victim) != GetClientTeam(attacker)) ) // are victim & attacker not on the same team?
 	{
 		// PrintToChatAll("victim is not on the same team as attacker")
 		return Plugin_Continue
 	}
 
-	if (AttackerId == VictimId) // is damage inflicted to self?
+	if (attacker == victim) // is damage inflicted to self?
 	{
 		// PrintToChatAll("damage inflicted to self")
-		return Plugin_Continue
-	}
-
-	if (IsFakeClient(VictimId)) // is victim a bot?
-	{
-		// PrintToChatAll("damage inflicted to bot")
 		return Plugin_Continue
 	}
 	
@@ -120,7 +117,7 @@ public Action OnTakeDamageAlive(int victim, int &attacker, int &inflictor, float
 	}
 	else if (StrEqual(sGame, "left4dead2", false))
 	{
-		if ( !StrEqual(AttackerWeapon, "weapon_grenade_launcher") ) // player not using a grenade launcher
+		if ( !StrEqual(attackerWeapon, "weapon_grenade_launcher") ) // if player not using a grenade launcher
 		{
 			if (weapon == -1) // L4D1 always has -1 weapon
 			{
@@ -130,88 +127,127 @@ public Action OnTakeDamageAlive(int victim, int &attacker, int &inflictor, float
 		}
 	}
 	
-	if (CheckCommandAccess(AttackerId, "root_admin", ADMFLAG_ROOT, true)) // if user is root admin
+	if (IsFakeClient(victim)) // is victim a bot?
 	{
-		// PrintToChatAll("damage inflicted by root admin")
+		// PrintToChatAll("damage inflicted to bot")
 		return Plugin_Continue
 	}
 	
-	// if (GetUserAdmin(AttackerId) != INVALID_ADMIN_ID) // if user is an admin
+	// if (CheckCommandAccess(attacker, "root_admin", ADMFLAG_ROOT, true)) // if user is root admin
+	// {
+		// PrintToChatAll("damage inflicted by root admin")
+		// return Plugin_Continue
+	// }
+	
+	// if (GetUserAdmin(attacker) != INVALID_ADMIN_ID) // if user is an admin
 	// {
 		// PrintToChatAll("damage inflicted by an admin")
 		// return Plugin_Continue
 	// }
 	
-	if (VictimDmg == 0) // was there any actual damage done
-	{
-		// PrintToChatAll("zero damage done")
-		return Plugin_Continue
-	}
-	
-	// PrintToChatAll("Prevented %s hitting %s for %d damage", AttackerName, VictimName, VictimDmg)
-	
 	// Punish the attacker
-	if( IsPlayerAlive(AttackerId) && IsClientInGame(AttackerId) )
+	if( IsPlayerAlive(attacker) && IsClientInGame(attacker) )
 	{
-		int AttackerHealth = GetClientHealth(AttackerId);
-		int AttackerTempHealth = GetTempHealth(AttackerId);
+		int AttackerHealth = GetClientHealth(attacker);
+		int AttackerTempHealth = GetTempHealth(attacker);
 		
-		int AttackerHealthAfterReverse = (AttackerHealth + AttackerTempHealth) - VictimDmg
-		// PrintToChatAll("Set %s's health to %d", AttackerName, AttackerHealthAfterReverse)
-		
-		int myFloatingVar = (GetEntProp(VictimId, Prop_Send, "m_iPlayerState", 1))
-		// PrintToChatAll("m_iPlayerState: %d", myFloatingVar)p
-		
-		if (AttackerHealth - VictimDmgRemaining >= 1)
+		if (AttackerHealth - victimDmgRemaining >= 1)
 		{
-			SetEntityHealth(AttackerId, AttackerHealth - VictimDmgRemaining)
-			VictimDmgRemaining -= VictimDmgRemaining
+			SetEntityHealth(attacker, AttackerHealth - victimDmgRemaining)
+			victimDmgRemaining -= victimDmgRemaining
 		}
-		if (AttackerHealth - VictimDmgRemaining < 1)
+		if (AttackerHealth - victimDmgRemaining < 1)
 		{
-			VictimDmgRemaining -= AttackerHealth
+			victimDmgRemaining -= AttackerHealth
 		}
 		
 		if (AttackerTempHealth != 0)
 		{
-			if (AttackerTempHealth - VictimDmgRemaining >= 1)
+			if (AttackerTempHealth - victimDmgRemaining >= 1)
 			{
-				SetTempHealth(AttackerId, AttackerTempHealth - VictimDmgRemaining)
-				VictimDmgRemaining -= VictimDmgRemaining
+				SetTempHealth(attacker, AttackerTempHealth - victimDmgRemaining)
+				victimDmgRemaining -= victimDmgRemaining
 			}
-			if (AttackerTempHealth - VictimDmgRemaining < 1)
+			if (AttackerTempHealth - victimDmgRemaining < 1)
 			{
-				SetTempHealth(AttackerId, AttackerTempHealth - VictimDmgRemaining)
-				VictimDmgRemaining -= AttackerTempHealth
+				SetTempHealth(attacker, AttackerTempHealth - victimDmgRemaining)
+				victimDmgRemaining -= AttackerTempHealth
 			}
 		}
 		
-		if (VictimDmgRemaining >= 1)
+		if (victimDmgRemaining >= 1)
 		{
-			IncapPlayer(AttackerId)
-			VictimDmgRemaining -= 1
+			IncapPlayer(attacker)
+			victimDmgRemaining -= 1
 			
-			if (IsPlayerIncapped(AttackerId)) // check if player is incapped, incase IncapPlayer() failed. possible when a survivor with 100/high health starts spamming hunting rifle or another high damage weapon at someone
+			if (IsPlayerIncapped(attacker)) // check if player is incapped, incase IncapPlayer() failed. possible when a survivor with 100/high health starts spamming hunting rifle or another high damage weapon at someone
 			{
-				SetEntityHealth(AttackerId, 300 - VictimDmgRemaining)
-				VictimDmgRemaining -= VictimDmgRemaining
+				SetEntityHealth(attacker, 300 - victimDmgRemaining)
+				victimDmgRemaining -= victimDmgRemaining
 			}
 		}
 	}
-
+	
+	// Announce
+	if (FFActive[attacker])  //If the player is already friendly firing teammates, resets the announce timer and adds to the damage
+	{
+		Handle pack;
+		DamageCache[attacker][victim] += victimDmg;
+		KillTimer(FFTimer[attacker]);
+		FFTimer[attacker] = CreateDataTimer(1.0, AnnounceFF, pack);
+		WritePackCell(pack,attacker);
+	}
+	else //If it's the first friendly fire by that player, it will start the announce timer and store the damage done.
+	{
+		DamageCache[attacker][victim] = victimDmg;
+		Handle pack;
+		FFActive[attacker] = true;
+		FFTimer[attacker] = CreateDataTimer(1.0, AnnounceFF, pack);
+		WritePackCell(pack,attacker);
+		for (int i = 1; i < 19; i++)
+		{
+			if (i != attacker && i != victim)
+			{
+				DamageCache[attacker][i] = 0;
+			}
+		}
+	}
+	
 	return Plugin_Handled; // do not apply damage to victim
+}
+
+public Action AnnounceFF(Handle timer, Handle pack) //Called if the attacker did not friendly fire recently, and announces all FF they did
+{
+	char victim[128];
+	char attacker[128];
+	ResetPack(pack);
+	int attackerc = ReadPackCell(pack);
+	FFActive[attackerc] = false;
+	if (IsClientInGame(attackerc) && IsClientConnected(attackerc) && !IsFakeClient(attackerc))
+		GetClientName(attackerc, attacker, sizeof(attacker));
+	else
+		attacker = "Disconnected Player";
+	for (int i = 1; i < MaxClients; i++)
+	{
+		if (DamageCache[attackerc][i] != 0 && attackerc != i)
+		{
+			if (IsClientInGame(i) && IsClientConnected(i))
+			{
+				GetClientName(i, victim, sizeof(victim));
+				
+				if (IsClientInGame(attackerc) && IsClientConnected(attackerc) && !IsFakeClient(attackerc))
+					PrintToChat(attackerc, "Reversed %d damage you did to %s",DamageCache[attackerc][i],victim);
+				if (IsClientInGame(i) && IsClientConnected(i) && !IsFakeClient(i))
+					PrintToChat(i, "Reversed %d damage %s did to you",DamageCache[attackerc][i],attacker);
+			}
+			DamageCache[attackerc][i] = 0;
+		}
+	}
 }
 
 bool IsPlayerIncapped(int client)
 {
 	if (GetEntProp(client, Prop_Send, "m_isIncapacitated", 1)) 
-		return true;
-	else
-		return false;
-}
-bool IsPlayerGrapEdge(int client)
-{
- 	if (GetEntProp(client, Prop_Send, "m_isHangingFromLedge", 1))
 		return true;
 	else
 		return false;
