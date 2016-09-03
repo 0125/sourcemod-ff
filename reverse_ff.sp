@@ -9,6 +9,10 @@ int DamageCache[MAXPLAYERS+1][MAXPLAYERS+1]; //Used to temporarily store Friendl
 Handle FFTimer[MAXPLAYERS+1]; //Used to be able to disable the FF timer when they do more FF
 bool FFActive[MAXPLAYERS+1]; //Stores whether players are in a state of friendly firing teammates
 
+char victimName[64];
+char attackerName[64];
+char attackerWeapon[64];
+
 public Plugin myinfo =
 {
 	name = "Reverse Friendly Fire",
@@ -53,10 +57,6 @@ public Action OnTakeDamageAlive(int victim, int &attacker, int &inflictor, float
 {
 	int victimDmg = RoundToNearest(damage);
 	int victimDmgRemaining = victimDmg
-	
-	char victimName[64];
-	char attackerName[64];
-	char attackerWeapon[64];
 	
 	/*
 	PrintToServer("victim: %d", victim)
@@ -127,11 +127,11 @@ public Action OnTakeDamageAlive(int victim, int &attacker, int &inflictor, float
 		}
 	}
 	
-	if (IsFakeClient(victim)) // is victim a bot?
-	{
+	// if (IsFakeClient(victim)) // is victim a bot?
+	// {
 		// PrintToChatAll("damage inflicted to bot")
-		return Plugin_Continue
-	}
+		// return Plugin_Continue
+	// }
 	
 	// if (CheckCommandAccess(attacker, "root_admin", ADMFLAG_ROOT, true)) // if user is root admin
 	// {
@@ -227,6 +227,23 @@ public Action AnnounceFF(Handle timer, Handle pack) //Called if the attacker did
 		GetClientName(attackerc, attacker, sizeof(attacker));
 	else
 		attacker = "Disconnected Player";
+	
+	for (int i = 1; i < MaxClients; i++)
+	{
+		if (DamageCache[attackerc][i] != 0)
+		{
+			if (IsClientInGame(i) && IsClientConnected(i))
+			{
+				GetClientName(i, victim, sizeof(victim));
+				
+				PrintToChatAll("Reversed %d damage %s did to %s",DamageCache[attackerc][i],attacker,victim);
+					
+				DamageCache[attackerc][i] = 0;
+			}
+		}
+	}
+	
+	/*
 	for (int i = 1; i < MaxClients; i++)
 	{
 		if (DamageCache[attackerc][i] != 0 && attackerc != i)
@@ -243,6 +260,7 @@ public Action AnnounceFF(Handle timer, Handle pack) //Called if the attacker did
 			DamageCache[attackerc][i] = 0;
 		}
 	}
+	*/
 }
 
 bool IsPlayerIncapped(int client)
