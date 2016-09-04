@@ -20,6 +20,8 @@ Handle FFTimer[MAXPLAYERS+1]; //Used to be able to disable the FF timer when the
 bool FFActive[MAXPLAYERS+1]; //Stores whether players are in a state of friendly firing teammates
 
 int immuneStatus[MAXPLAYERS+1]; //Used to store immune status while & after survivor is under attack from SI
+int carryStatus[MAXPLAYERS+1]; //Used to store if survivor is being carried by charger
+int pummelStatus[MAXPLAYERS+1]; //Used to store if survivor is being pumelled by charger
 
 char sGame[256];
 
@@ -60,13 +62,16 @@ public void OnPluginStart()
 		HookEvent("lunge_pounce", Event_immunityStart);
 		HookEvent("pounce_end", Event_immunityEnd);
 	}
-	else if (StrEqual(sGame, "left4dead2", false))
+	if (StrEqual(sGame, "left4dead2", false))
 	{
 		HookEvent("jockey_ride", Event_immunityStart);
 		HookEvent("jockey_ride_end", Event_immunityEnd);
 		
-		HookEvent("charger_pummel_start", Event_immunityStart);
-		HookEvent("charger_pummel_end", Event_immunityEnd);
+		HookEvent("charger_carry_start", Event_charger_carry_start);
+		HookEvent("charger_carry_end", Event_charger_carry_end);
+		
+		HookEvent("charger_pummel_start", Event_charger_pummel_start);
+		HookEvent("charger_pummel_end", Event_charger_pummel_end);
 	}
 }
 
@@ -149,11 +154,11 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 		}
 	}
 	
-	if (IsFakeClient(victim)) // is victim a bot?
-	{
+	// if (IsFakeClient(victim)) // is victim a bot?
+	// {
 		// PrintToChatAll("damage inflicted to bot")
-		return Plugin_Continue
-	}
+		// return Plugin_Continue
+	// }
 	
 	// if (CheckCommandAccess(attacker, "root_admin", ADMFLAG_ROOT, true)) // if user is root admin
 	// {
@@ -392,14 +397,73 @@ public Action Event_immunityEnd(Handle event, const char[] name, bool dontBroadc
 	{
 		return;
 	}
-	// PrintToChatAll("Event_immunityEnd: starting immuneStatus 0 timer");
 	
-	CreateTimer(3.0, Timer_immunityEnd, client);
+	// PrintToChatAll("Event_immunityEnd: starting Timer_immunityEnd");
+	
+	CreateTimer(2.0, Timer_immunityEnd, client);
+}
+
+public Action Event_charger_carry_start(Handle event, const char[] name, bool dontBroadcast)
+{
+	int client = GetClientOfUserId(GetEventInt(event, "victim"));
+	if (!IsSurvivor(client))
+	{
+		return;
+	}
+	
+	// PrintToChatAll("Event_charger_carry_start");
+	carryStatus[client] = 1
+	immuneStatus[client] = 1
+}
+
+public Action Event_charger_carry_end(Handle event, const char[] name, bool dontBroadcast)
+{
+	int client = GetClientOfUserId(GetEventInt(event, "victim"));
+	if (!IsSurvivor(client))
+	{
+		return;
+	}
+	
+	// PrintToChatAll("Event_charger_carry_end: starting Timer_immunityEnd");
+	carryStatus[client] = 0
+	CreateTimer(2.0, Timer_immunityEnd, client);
+}
+
+public Action Event_charger_pummel_start(Handle event, const char[] name, bool dontBroadcast)
+{
+	int client = GetClientOfUserId(GetEventInt(event, "victim"));
+	if (!IsSurvivor(client))
+	{
+		return;
+	}
+	
+	// PrintToChatAll("Event_charger_pummel_start");
+	pummelStatus[client] = 1
+	immuneStatus[client] = 1
+}
+
+public Action Event_charger_pummel_end(Handle event, const char[] name, bool dontBroadcast)
+{
+	int client = GetClientOfUserId(GetEventInt(event, "victim"));
+	if (!IsSurvivor(client))
+	{
+		return;
+	}
+	
+	// PrintToChatAll("Event_charger_pummel_end: starting Timer_immunityEnd");
+	pummelStatus[client] = 0
+	CreateTimer(2.0, Timer_immunityEnd, client);
 }
 
 public Action Timer_immunityEnd(Handle timer, any client)
 {
-	// PrintToChatAll("immuneStatus 0!");
+	if (carryStatus[client] == 1 || pummelStatus[client] == 1) // do not remove immunity if victim is being carried or pummeled by charger
+	{
+		// PrintToChatAll("Timer_immunityEnd: survivor is being pummeled or carried");
+		return;
+	}
+	
+	// PrintToChatAll("Timer_immunityEnd: immuneStatus 0!");
 	immuneStatus[client] = 0
 }
 
