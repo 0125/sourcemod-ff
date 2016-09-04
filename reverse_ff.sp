@@ -1,3 +1,13 @@
+/*
+OnTakeDamage
+	cons:
+		In l4d2 if a survivor is smokered and gets shot without taking damage OnTakeDamage still reports damage
+		
+OnTakeDamageAlive
+	cons:
+		If a survivor gets incapped in 1 shot, for example when 1 health, OnTakeDamageAlive does not trigger
+*/
+
 #include <sourcemod>
 #include <sdkhooks>
 #include <sdktools>
@@ -9,9 +19,8 @@ int DamageCache[MAXPLAYERS+1][MAXPLAYERS+1]; //Used to temporarily store Friendl
 Handle FFTimer[MAXPLAYERS+1]; //Used to be able to disable the FF timer when they do more FF
 bool FFActive[MAXPLAYERS+1]; //Stores whether players are in a state of friendly firing teammates
 
-char victimName[64];
-char attackerName[64];
-char attackerWeapon[64];
+// cvars and their cached variables
+Handle reverse_ff_enable = null;
 
 public Plugin myinfo =
 {
@@ -22,74 +31,62 @@ public Plugin myinfo =
 	url = "http://www.sourcemod.net/"
 };
 
-public void OnClientPostAdminCheck(int client)
-{
-	// char ClientName[64];
-	// GetClientName(client, ClientName, sizeof(ClientName))
-	// PrintToChatAll("OnClientPostAdminCheck(): %s", ClientName)
-	
-	SDKHook(client, SDKHook_OnTakeDamageAlive, OnTakeDamageAlive);
-}
-
 public void OnPluginStart()
 {
-	// PrintToChatAll("OnPluginStart()")
+	reverse_ff_enable = CreateConVar("reverse_ff_enable", "1", "Enable reversed friendy fire");
+	AutoExecConfig(true, "reverse_ff");
 	
 	for (int i = 1; i <= MaxClients; i++)
 	{
 		if (IsClientInGame(i))
 		{
-			// char ClientName[64];
-			// GetClientName(i, ClientName, sizeof(ClientName))
-			// PrintToChatAll("OnClientPostAdminCheck(): %s", ClientName)
-			
-			SDKHook(i, SDKHook_OnTakeDamageAlive, OnTakeDamageAlive);
+			SDKHook(i, SDKHook_OnTakeDamage, OnTakeDamage);
 		}
 	}
 }
 
-/*
-OnTakeDamageAlive damage is more accurate than OnTakeDamage, for example:
-In l4d2 a survivor is smokered. Gets shot without taking damage, but
-OnTakeDamage thinks there was damage done
-*/
-public Action OnTakeDamageAlive(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &weapon, float damageForce[3], float damagePosition[3])
+public void OnClientPostAdminCheck(int client)
 {
+	SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
+}
+
+public void OnClientDisconnect(int client)
+{
+	SDKUnhook(client, SDKHook_OnTakeDamage, OnTakeDamage);
+}
+
+public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &weapon, float damageForce[3], float damagePosition[3])
+{
+	if (!GetConVarBool(reverse_ff_enable)) // Turned off in config
+	{
+		return Plugin_Continue;
+	}
+	
 	int victimDmg = RoundToNearest(damage);
 	int victimDmgRemaining = victimDmg
 	
-	/*
-	PrintToServer("victim: %d", victim)
-	PrintToServer("attacker: %d", attacker)
-	PrintToServer("inflictor: %d", inflictor)
-	PrintToServer("damage: %f", damage)
-	PrintToServer("damagetype: %d", damagetype)
-	PrintToServer("weapon: %d", weapon)
-	PrintToServer("damageForce: %f", damageForce)
-	PrintToServer("damagePosition: %f", damagePosition)
-	*/
-	
-	if ( (!IsValidEntity(victim)) || (!IsValidEntity(attacker)) ) // are victim & attacker invalid entities?
+	if ( (!IsValidEntity(victim)) || (!IsValidEntity(attacker)) ) // is victim or attacker an invalid entity?
 	{
-		// PrintToChatAll("invalid Victim or attacker Id")
+		// PrintToChatAll("victim or attacker an invalid entity")
 		return Plugin_Continue
 	}
 	
-	if ( (!IsValidClient(attacker)) || (!IsValidClient(attacker)) ) // are victim & attacker invalid clients?
+	if ( (!IsValidClient(attacker)) || (!IsValidClient(attacker)) ) // is victim or attacker an invalid client?
 	{
-		// PrintToChatAll("Victim or attacker is not a valid client")
+		// PrintToChatAll("victim or attacker an invalid client")
 		return Plugin_Continue
 	}
 	
-	// Get client info after valid client check. Using an invalid client id for certain GetClient fuctions causes an error and stops flow
-	GetClientName(victim, victimName, sizeof(victimName))
-	GetClientName(attacker, attackerName, sizeof(attackerName))
-	GetClientWeapon(attacker, attackerWeapon, sizeof(attackerWeapon)) 
+	if (IsPlayerSmokered(victim) && GetClientTeam(victim) == GetClientTeam(attacker))	// is victim is smokered and attacker is on the same team
+	{
+		// PrintToChatAll("victim is smokered and attacker is on the same team")
+		return Plugin_Handled; // do not apply damage to victim or attacker
+	}
 	
 	if (IsPlayerIncapped(attacker))
 	{
 		// PrintToChatAll("attacker is incapped")
-		return Plugin_Handled; // do not apply damage to victim
+		return Plugin_Handled; // do not apply damage to victim or attacker
 	}
 	
 	if ( (GetClientTeam(victim) != GetClientTeam(attacker)) ) // are victim & attacker not on the same team?
@@ -117,6 +114,8 @@ public Action OnTakeDamageAlive(int victim, int &attacker, int &inflictor, float
 	}
 	else if (StrEqual(sGame, "left4dead2", false))
 	{
+		char attackerWeapon[64];
+		GetClientWeapon(attacker, attackerWeapon, sizeof(attackerWeapon)) 
 		if ( !StrEqual(attackerWeapon, "weapon_grenade_launcher") ) // if player not using a grenade launcher
 		{
 			if (weapon == -1) // L4D1 always has -1 weapon
@@ -127,11 +126,11 @@ public Action OnTakeDamageAlive(int victim, int &attacker, int &inflictor, float
 		}
 	}
 	
-	// if (IsFakeClient(victim)) // is victim a bot?
-	// {
+	if (IsFakeClient(victim)) // is victim a bot?
+	{
 		// PrintToChatAll("damage inflicted to bot")
-		// return Plugin_Continue
-	// }
+		return Plugin_Continue
+	}
 	
 	// if (CheckCommandAccess(attacker, "root_admin", ADMFLAG_ROOT, true)) // if user is root admin
 	// {
@@ -263,9 +262,50 @@ public Action AnnounceFF(Handle timer, Handle pack) //Called if the attacker did
 	*/
 }
 
+stock float GetClientsDistance(int victim, int attacker)
+{
+	float attackerPos[3];
+	float victimPos[3];
+	float mins[3];
+	float maxs[3];
+	float halfHeight;
+	GetClientMins(victim, mins);
+	GetClientMaxs(victim, maxs);
+	
+	halfHeight = maxs[2] - mins[2] + 10;
+	
+	GetClientAbsOrigin(victim,victimPos);
+	GetClientAbsOrigin(attacker,attackerPos);
+	
+	float posHeightDiff = attackerPos[2] - victimPos[2];
+	
+	if (posHeightDiff > halfHeight)
+	{
+		attackerPos[2] -= halfHeight;
+	}
+	else if (posHeightDiff < (-1.0 * halfHeight))
+	{
+		victimPos[2] -= halfHeight;
+	}
+	else
+	{
+		attackerPos[2] = victimPos[2];
+	}
+	
+	return GetVectorDistance(victimPos ,attackerPos, false);
+}
+
 bool IsPlayerIncapped(int client)
 {
 	if (GetEntProp(client, Prop_Send, "m_isIncapacitated", 1)) 
+		return true;
+	else
+		return false;
+}
+
+bool IsPlayerSmokered(int client)
+{
+	if (GetEntProp(client, Prop_Send, "m_isProneTongueDrag", 1)) 
 		return true;
 	else
 		return false;
@@ -288,19 +328,19 @@ int SetTempHealth(int client, int hp)
 	SetEntPropFloat(client, Prop_Send, "m_healthBuffer", TempHealthFloat);
 }
 
-void IncapPlayer(int target)
+void IncapPlayer(int client)
 {
-	if(IsValidEntity(target))
+	if(IsValidEntity(client))
 	{
 		int iDmgEntity = CreateEntityByName("point_hurt");
-		SetEntityHealth(target, 1);
-		DispatchKeyValue(target, "targetname", "bm_target");
+		SetEntityHealth(client, 1);
+		DispatchKeyValue(client, "targetname", "bm_target");
 		DispatchKeyValue(iDmgEntity, "DamageTarget", "bm_target");
 		DispatchKeyValue(iDmgEntity, "Damage", "100");
 		DispatchKeyValue(iDmgEntity, "DamageType", "0");
 		DispatchSpawn(iDmgEntity);
-		AcceptEntityInput(iDmgEntity, "Hurt", target);
-		DispatchKeyValue(target, "targetname", "bm_targetoff");
+		AcceptEntityInput(iDmgEntity, "Hurt", client);
+		DispatchKeyValue(client, "targetname", "bm_targetoff");
 		RemoveEdict(iDmgEntity);
 	}
 }
