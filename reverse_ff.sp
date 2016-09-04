@@ -19,6 +19,8 @@ int DamageCache[MAXPLAYERS+1][MAXPLAYERS+1]; //Used to temporarily store Friendl
 Handle FFTimer[MAXPLAYERS+1]; //Used to be able to disable the FF timer when they do more FF
 bool FFActive[MAXPLAYERS+1]; //Stores whether players are in a state of friendly firing teammates
 
+int immuneStatus[MAXPLAYERS+1]; //Used to store immune status while & after survivor is under attack from SI
+
 // cvars and their cached variables
 Handle reverse_ff_enable = null;
 
@@ -43,6 +45,18 @@ public void OnPluginStart()
 			SDKHook(i, SDKHook_OnTakeDamage, OnTakeDamage);
 		}
 	}
+	
+	HookEvent("tongue_grab", Event_immunityStart);
+	HookEvent("tongue_release", Event_immunityEnd);
+	
+	HookEvent("lunge_pounce", Event_immunityStart);
+	HookEvent("pounce_end", Event_immunityEnd);
+	
+	HookEvent("jockey_ride", Event_immunityStart);
+	HookEvent("jockey_ride_end", Event_immunityEnd);
+	
+	HookEvent("charger_pummel_start", Event_immunityStart);
+	HookEvent("charger_pummel_end", Event_immunityEnd);
 }
 
 public void OnClientPostAdminCheck(int client)
@@ -77,9 +91,15 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 		return Plugin_Continue
 	}
 	
-	if (IsPlayerSmokered(victim) && GetClientTeam(victim) == GetClientTeam(attacker))	// is victim is smokered and attacker is on the same team
+	if ( (GetClientTeam(victim) != GetClientTeam(attacker)) ) // are victim & attacker not on the same team?
 	{
-		// PrintToChatAll("victim is smokered and attacker is on the same team")
+		// PrintToChatAll("victim is not on the same team as attacker")
+		return Plugin_Continue
+	}
+	
+	if (immuneStatus[victim] == 1  && GetClientTeam(victim) == GetClientTeam(attacker))
+	{
+		// PrintToChatAll("victim is immune from cooldown of SI and attacker is on the same team")
 		return Plugin_Handled; // do not apply damage to victim or attacker
 	}
 	
@@ -87,12 +107,6 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 	{
 		// PrintToChatAll("attacker is incapped")
 		return Plugin_Handled; // do not apply damage to victim or attacker
-	}
-	
-	if ( (GetClientTeam(victim) != GetClientTeam(attacker)) ) // are victim & attacker not on the same team?
-	{
-		// PrintToChatAll("victim is not on the same team as attacker")
-		return Plugin_Continue
 	}
 
 	if (attacker == victim) // is damage inflicted to self?
@@ -303,14 +317,6 @@ bool IsPlayerIncapped(int client)
 		return false;
 }
 
-bool IsPlayerSmokered(int client)
-{
-	if (GetEntProp(client, Prop_Send, "m_isProneTongueDrag", 1)) 
-		return true;
-	else
-		return false;
-}
-
 int GetTempHealth(int client)
 {
 	float decay = GetConVarFloat(FindConVar("pain_pills_decay_rate"));
@@ -352,3 +358,41 @@ bool IsValidClient(int client)
      
     return true; 
 }
+
+public Action Event_immunityStart(Handle event, const char[] name, bool dontBroadcast)
+{
+	int client = GetClientOfUserId(GetEventInt(event, "victim"));
+	if (!IsSurvivor(client))
+	{
+		return;
+	}
+	// PrintToChatAll("Event_immunityStart: immuneStatus 1");
+	immuneStatus[client] = 1
+}
+
+public Action Event_immunityEnd(Handle event, const char[] name, bool dontBroadcast)
+{
+	int client = GetClientOfUserId(GetEventInt(event, "victim"));
+	if (!IsSurvivor(client))
+	{
+		return;
+	}
+	// PrintToChatAll("Event_immunityEnd: starting immuneStatus 0 timer");
+	
+	CreateTimer(3.0, Timer_immunityEnd, client);
+}
+
+public Action Timer_immunityEnd(Handle timer, any client)
+{
+	// PrintToChatAll("immuneStatus 0!");
+	immuneStatus[client] = 0
+}
+
+stock bool IsSurvivor(int client)
+{
+	if (client > 0 && client < MaxClients && IsClientInGame(client) && GetClientTeam(client) == 2)
+	{
+		return true;
+	}
+	return false;
+} 
