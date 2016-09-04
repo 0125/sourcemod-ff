@@ -21,6 +21,8 @@ bool FFActive[MAXPLAYERS+1]; //Stores whether players are in a state of friendly
 
 int immuneStatus[MAXPLAYERS+1]; //Used to store immune status while & after survivor is under attack from SI
 
+char sGame[256];
+
 // cvars and their cached variables
 Handle reverse_ff_enable = null;
 
@@ -35,9 +37,12 @@ public Plugin myinfo =
 
 public void OnPluginStart()
 {
+	GetGameFolderName(sGame, sizeof(sGame));
+	
 	reverse_ff_enable = CreateConVar("reverse_ff_enable", "1", "Enable reversed friendy fire");
 	AutoExecConfig(true, "reverse_ff");
 	
+	// hook OnTakeDamage for clients on server
 	for (int i = 1; i <= MaxClients; i++)
 	{
 		if (IsClientInGame(i))
@@ -46,21 +51,27 @@ public void OnPluginStart()
 		}
 	}
 	
-	HookEvent("tongue_grab", Event_immunityStart);
-	HookEvent("tongue_release", Event_immunityEnd);
-	
-	HookEvent("lunge_pounce", Event_immunityStart);
-	HookEvent("pounce_end", Event_immunityEnd);
-	
-	HookEvent("jockey_ride", Event_immunityStart);
-	HookEvent("jockey_ride_end", Event_immunityEnd);
-	
-	HookEvent("charger_pummel_start", Event_immunityStart);
-	HookEvent("charger_pummel_end", Event_immunityEnd);
+	// hook SI events to set player immunity from ff
+	if (StrEqual(sGame, "left4dead", false) || StrEqual(sGame, "left4dead2", false))
+	{
+		HookEvent("tongue_grab", Event_immunityStart);
+		HookEvent("tongue_release", Event_immunityEnd);
+		
+		HookEvent("lunge_pounce", Event_immunityStart);
+		HookEvent("pounce_end", Event_immunityEnd);
+	}
+	else if (StrEqual(sGame, "left4dead2", false))
+	{
+		HookEvent("jockey_ride", Event_immunityStart);
+		HookEvent("jockey_ride_end", Event_immunityEnd);
+		
+		HookEvent("charger_pummel_start", Event_immunityStart);
+		HookEvent("charger_pummel_end", Event_immunityEnd);
+	}
 }
 
 public void OnClientPostAdminCheck(int client)
-{
+{ // hook OnTakeDamage for new clients after connecting to server
 	SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
 }
 
@@ -116,8 +127,6 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 	}
 	
 	// damage inflicted indirectly eg: pipebomb or propanetank explosion
-	char sGame[256];
-	GetGameFolderName(sGame, sizeof(sGame));
 	if (StrEqual(sGame, "left4dead", false))
 	{
 		if ( !IsValidClient(inflictor) ) // L4D2 melee weapons have random high non-client values
@@ -193,11 +202,8 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 			IncapPlayer(attacker)
 			victimDmgRemaining -= 1
 			
-			if (IsPlayerIncapped(attacker)) // check if player is incapped, incase IncapPlayer() failed. possible when a survivor with 100/high health starts spamming hunting rifle or another high damage weapon at someone
-			{
-				SetEntityHealth(attacker, 300 - victimDmgRemaining)
-				victimDmgRemaining -= victimDmgRemaining
-			}
+			SetEntityHealth(attacker, GetClientHealth(attacker) - victimDmgRemaining)
+			victimDmgRemaining -= victimDmgRemaining
 		}
 	}
 	
@@ -336,14 +342,23 @@ int SetTempHealth(int client, int hp)
 
 void IncapPlayer(int client)
 {
+	/*
+	using DamageType 32 (fall damage) instead of 0 (generic damage)
+	prevents a bug where if the attacker does a lot of damage to the victim rapidly,
+	for example shooting point blank multiple times with a high damage weapon on expert difficulty,
+	the attacker is not affected by the point_hurt entity created in this function
+	https://developer.valvesoftware.com/wiki/Point_hurt
+	*/
+	
 	if(IsValidEntity(client))
 	{
 		int iDmgEntity = CreateEntityByName("point_hurt");
 		SetEntityHealth(client, 1);
+		SetTempHealth(client, 0) // prevents l4d1 server error msg spam: DataTable warning: (class player): Out-of-range value (-XX.000000) in SendPropFloat 'm_healthBuffer', clamping.
 		DispatchKeyValue(client, "targetname", "bm_target");
 		DispatchKeyValue(iDmgEntity, "DamageTarget", "bm_target");
 		DispatchKeyValue(iDmgEntity, "Damage", "100");
-		DispatchKeyValue(iDmgEntity, "DamageType", "0");
+		DispatchKeyValue(iDmgEntity, "DamageType", "32");
 		DispatchSpawn(iDmgEntity);
 		AcceptEntityInput(iDmgEntity, "Hurt", client);
 		DispatchKeyValue(client, "targetname", "bm_targetoff");
