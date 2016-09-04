@@ -154,11 +154,11 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 		}
 	}
 	
-	// if (IsFakeClient(victim)) // is victim a bot?
-	// {
+	if (IsFakeClient(victim)) // is victim a bot?
+	{
 		// PrintToChatAll("damage inflicted to bot")
-		// return Plugin_Continue
-	// }
+		return Plugin_Continue
+	}
 	
 	// if (CheckCommandAccess(attacker, "root_admin", ADMFLAG_ROOT, true)) // if user is root admin
 	// {
