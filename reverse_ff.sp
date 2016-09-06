@@ -56,6 +56,9 @@ public void OnPluginStart()
 	// hook SI events to set player immunity from ff
 	if (StrEqual(sGame, "left4dead", false) || StrEqual(sGame, "left4dead2", false))
 	{
+		HookEvent("player_bot_replace", Event_player_bot_replace);
+		HookEvent("bot_player_replace", Event_bot_player_replace);
+		
 		HookEvent("tongue_grab", Event_immunityStart);
 		HookEvent("tongue_release", Event_immunityEnd);
 		
@@ -154,11 +157,11 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 		}
 	}
 	
-	if (IsFakeClient(victim)) // is victim a bot?
-	{
+	// if (IsFakeClient(victim)) // is victim a bot?
+	// {
 		// PrintToChatAll("damage inflicted to bot")
-		return Plugin_Continue
-	}
+		// return Plugin_Continue
+	// }
 	
 	// if (CheckCommandAccess(attacker, "root_admin", ADMFLAG_ROOT, true)) // if user is root admin
 	// {
@@ -183,9 +186,10 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 			SetEntityHealth(attacker, AttackerHealth - victimDmgRemaining)
 			victimDmgRemaining -= victimDmgRemaining
 		}
-		if (AttackerHealth - victimDmgRemaining < 1)
+		else if (AttackerHealth - victimDmgRemaining < 1)
 		{
-			victimDmgRemaining -= AttackerHealth
+			SetEntityHealth(attacker, 1)
+			victimDmgRemaining -= AttackerHealth + 1
 		}
 		
 		if (AttackerTempHealth != 0)
@@ -195,9 +199,9 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 				SetTempHealth(attacker, AttackerTempHealth - victimDmgRemaining)
 				victimDmgRemaining -= victimDmgRemaining
 			}
-			if (AttackerTempHealth - victimDmgRemaining < 1)
+			else if (AttackerTempHealth - victimDmgRemaining < 1)
 			{
-				SetTempHealth(attacker, AttackerTempHealth - victimDmgRemaining)
+				SetTempHealth(attacker, 0)
 				victimDmgRemaining -= AttackerTempHealth
 			}
 		}
@@ -206,7 +210,10 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 		{
 			IncapPlayer(attacker)
 			victimDmgRemaining -= 1
-			
+		}
+		
+		if (victimDmgRemaining >= 1)
+		{
 			SetEntityHealth(attacker, GetClientHealth(attacker) - victimDmgRemaining)
 			victimDmgRemaining -= victimDmgRemaining
 		}
@@ -287,96 +294,37 @@ public Action AnnounceFF(Handle timer, Handle pack) //Called if the attacker did
 	*/
 }
 
-stock float GetClientsDistance(int victim, int attacker)
+public Action Event_player_bot_replace(Handle event, const char[] name, bool dontBroadcast)
 {
-	float attackerPos[3];
-	float victimPos[3];
-	float mins[3];
-	float maxs[3];
-	float halfHeight;
-	GetClientMins(victim, mins);
-	GetClientMaxs(victim, maxs);
+	int playerId = GetClientOfUserId(GetEventInt(event, "player"))
+	// int bot = GetClientOfUserId(GetEventInt(event, "bot"))
 	
-	halfHeight = maxs[2] - mins[2] + 10;
-	
-	GetClientAbsOrigin(victim,victimPos);
-	GetClientAbsOrigin(attacker,attackerPos);
-	
-	float posHeightDiff = attackerPos[2] - victimPos[2];
-	
-	if (posHeightDiff > halfHeight)
+	if (StrEqual(sGame, "left4dead", false) && L4D_IsSurvivorAffectedBySI(playerId))
+		immuneStatus[playerId] = 1
+	if (StrEqual(sGame, "left4dead2", false) && L4D2_IsSurvivorAffectedBySI(playerId))
 	{
-		attackerPos[2] -= halfHeight;
-	}
-	else if (posHeightDiff < (-1.0 * halfHeight))
-	{
-		victimPos[2] -= halfHeight;
-	}
-	else
-	{
-		attackerPos[2] = victimPos[2];
-	}
-	
-	return GetVectorDistance(victimPos ,attackerPos, false);
-}
-
-bool IsPlayerIncapped(int client)
-{
-	if (GetEntProp(client, Prop_Send, "m_isIncapacitated", 1)) 
-		return true;
-	else
-		return false;
-}
-
-int GetTempHealth(int client)
-{
-	float decay = GetConVarFloat(FindConVar("pain_pills_decay_rate"));
-	float buffer = GetEntPropFloat(client, Prop_Send, "m_healthBuffer");
-	float time = (GetGameTime() - GetEntPropFloat(client, Prop_Send, "m_healthBufferTime"));
-	float TempHealth = buffer - (time * decay)
-	if (TempHealth < 0) return 0;
-	else return RoundToFloor(TempHealth);
-}
-
-int SetTempHealth(int client, int hp)
-{
-	SetEntPropFloat(client, Prop_Send, "m_healthBufferTime", GetGameTime());
-	float TempHealthFloat = hp * 1.0 //prevent tag mismatch
-	SetEntPropFloat(client, Prop_Send, "m_healthBuffer", TempHealthFloat);
-}
-
-void IncapPlayer(int client)
-{
-	/*
-	using DamageType 32 (fall damage) instead of 0 (generic damage)
-	prevents a bug where if the attacker does a lot of damage to the victim rapidly,
-	for example shooting point blank multiple times with a high damage weapon on expert difficulty,
-	the attacker is not affected by the point_hurt entity created in this function
-	https://developer.valvesoftware.com/wiki/Point_hurt
-	*/
-	
-	if(IsValidEntity(client))
-	{
-		int iDmgEntity = CreateEntityByName("point_hurt");
-		SetEntityHealth(client, 1);
-		SetTempHealth(client, 0) // prevents l4d1 server error msg spam: DataTable warning: (class player): Out-of-range value (-XX.000000) in SendPropFloat 'm_healthBuffer', clamping.
-		DispatchKeyValue(client, "targetname", "bm_target");
-		DispatchKeyValue(iDmgEntity, "DamageTarget", "bm_target");
-		DispatchKeyValue(iDmgEntity, "Damage", "100");
-		DispatchKeyValue(iDmgEntity, "DamageType", "32");
-		DispatchSpawn(iDmgEntity);
-		AcceptEntityInput(iDmgEntity, "Hurt", client);
-		DispatchKeyValue(client, "targetname", "bm_targetoff");
-		RemoveEdict(iDmgEntity);
+		immuneStatus[playerId] = 1
+		
+		if (GetEntPropEnt(playerId, Prop_Send, "m_carryAttacker") > 0)
+			carryStatus[playerId] = 1
+		if (GetEntPropEnt(playerId, Prop_Send, "m_pummelAttacker") > 0)
+			pummelStatus[playerId] = 1
 	}
 }
 
-bool IsValidClient(int client) 
+public Action Event_bot_player_replace(Handle event, const char[] name, bool dontBroadcast)
 {
-    if ( !( 1 <= client <= MaxClients ) || !IsClientInGame(client) ) 
-        return false; 
-     
-    return true; 
+	int playerId = GetClientOfUserId(GetEventInt(event, "player"))
+	// int bot = GetClientOfUserId(GetEventInt(event, "bot"))
+	
+	if (StrEqual(sGame, "left4dead", false) && L4D_IsSurvivorAffectedBySI(playerId))
+		immuneStatus[playerId] = 0
+	if (StrEqual(sGame, "left4dead2", false) && L4D2_IsSurvivorAffectedBySI(playerId))
+	{
+		immuneStatus[playerId] = 0
+		carryStatus[playerId] = 0
+		pummelStatus[playerId] = 0
+	}
 }
 
 public Action Event_immunityStart(Handle event, const char[] name, bool dontBroadcast)
@@ -467,11 +415,118 @@ public Action Timer_immunityEnd(Handle timer, any client)
 	immuneStatus[client] = 0
 }
 
-stock bool IsSurvivor(int client)
+stock float GetClientsDistance(int victim, int attacker)
+{
+	float attackerPos[3];
+	float victimPos[3];
+	float mins[3];
+	float maxs[3];
+	float halfHeight;
+	GetClientMins(victim, mins);
+	GetClientMaxs(victim, maxs);
+	
+	halfHeight = maxs[2] - mins[2] + 10;
+	
+	GetClientAbsOrigin(victim,victimPos);
+	GetClientAbsOrigin(attacker,attackerPos);
+	
+	float posHeightDiff = attackerPos[2] - victimPos[2];
+	
+	if (posHeightDiff > halfHeight)
+	{
+		attackerPos[2] -= halfHeight;
+	}
+	else if (posHeightDiff < (-1.0 * halfHeight))
+	{
+		victimPos[2] -= halfHeight;
+	}
+	else
+	{
+		attackerPos[2] = victimPos[2];
+	}
+	
+	return GetVectorDistance(victimPos ,attackerPos, false);
+}
+
+void IncapPlayer(int client)
+{
+	/*
+	using DamageType 32 (fall damage) instead of 0 (generic damage)
+	prevents a bug where if the attacker does a lot of damage to the victim rapidly,
+	for example shooting point blank multiple times with a high damage weapon on expert difficulty,
+	the attacker is not affected by the point_hurt entity created in this function
+	https://developer.valvesoftware.com/wiki/Point_hurt
+	*/
+	
+	if(IsValidEntity(client))
+	{
+		int iDmgEntity = CreateEntityByName("point_hurt");
+		SetEntityHealth(client, 1);
+		SetTempHealth(client, 0) // prevents l4d1 server error msg spam: DataTable warning: (class player): Out-of-range value (-XX.000000) in SendPropFloat 'm_healthBuffer', clamping.
+		DispatchKeyValue(client, "targetname", "bm_target");
+		DispatchKeyValue(iDmgEntity, "DamageTarget", "bm_target");
+		DispatchKeyValue(iDmgEntity, "Damage", "100");
+		DispatchKeyValue(iDmgEntity, "DamageType", "32");
+		DispatchSpawn(iDmgEntity);
+		AcceptEntityInput(iDmgEntity, "Hurt", client);
+		DispatchKeyValue(client, "targetname", "bm_targetoff");
+		RemoveEdict(iDmgEntity);
+	}
+}
+
+int GetTempHealth(int client)
+{
+	float decay = GetConVarFloat(FindConVar("pain_pills_decay_rate"));
+	float buffer = GetEntPropFloat(client, Prop_Send, "m_healthBuffer");
+	float time = (GetGameTime() - GetEntPropFloat(client, Prop_Send, "m_healthBufferTime"));
+	float TempHealth = buffer - (time * decay)
+	if (TempHealth < 0) return 0;
+	else return RoundToFloor(TempHealth);
+}
+
+int SetTempHealth(int client, int hp)
+{
+	SetEntPropFloat(client, Prop_Send, "m_healthBufferTime", GetGameTime());
+	float TempHealthFloat = hp * 1.0 //prevent tag mismatch
+	SetEntPropFloat(client, Prop_Send, "m_healthBuffer", TempHealthFloat);
+}
+
+bool IsPlayerIncapped(int client)
+{
+	if (GetEntProp(client, Prop_Send, "m_isIncapacitated", 1)) 
+		return true;
+	else
+		return false;
+}
+
+bool IsValidClient(int client) 
+{
+    if ( !( 1 <= client <= MaxClients ) || !IsClientInGame(client) ) 
+        return false; 
+     
+    return true; 
+}
+
+bool IsSurvivor(int client)
 {
 	if (client > 0 && client < MaxClients && IsClientInGame(client) && GetClientTeam(client) == 2)
 	{
 		return true;
 	}
 	return false;
-} 
+}
+
+bool L4D_IsSurvivorAffectedBySI(int client)
+{
+	return GetEntPropEnt(client, Prop_Send, "m_pounceAttacker") > 0 || 
+		GetEntPropEnt(client, Prop_Send, "m_tongueOwner") > 0;
+}
+
+bool L4D2_IsSurvivorAffectedBySI(int client)
+{
+	return GetEntPropEnt(client, Prop_Send, "m_pummelAttacker") > 0 || 
+		GetEntPropEnt(client, Prop_Send, "m_carryAttacker") > 0 || 
+		GetEntPropEnt(client, Prop_Send, "m_pounceAttacker") > 0 || 
+		GetEntPropEnt(client, Prop_Send, "m_jockeyAttacker") > 0 || 
+		GetEntPropEnt(client, Prop_Send, "m_tongueOwner") > 0;
+}
