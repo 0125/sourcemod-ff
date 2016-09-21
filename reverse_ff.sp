@@ -1,36 +1,28 @@
 #include <sourcemod>
 #include <sdkhooks>
 #include <sdktools>
-
 #include <l4d_myStocks>
 
 #pragma newdecls required
 #pragma semicolon 1
 
-//Global vars
-int DamageCache[MAXPLAYERS+1][MAXPLAYERS+1]; //Used to temporarily store Friendly Fire Damage between teammates
-Handle FFTimer[MAXPLAYERS+1]; //Used to be able to disable the FF timer when they do more FF
-bool FFActive[MAXPLAYERS+1]; //Stores whether players are in a state of friendly firing teammates
-
-int immuneStatus[MAXPLAYERS+1]; //Used to store immune status while & after survivor is under attack from SI
-int carryStatus[MAXPLAYERS+1]; //Used to store if survivor is being carried by charger
-int pummelStatus[MAXPLAYERS+1]; //Used to store if survivor is being pumelled by charger
-
-int debugMode = 1;
-
-char sGame[256];
-
-// Cvars and their cached vars
-Handle reverse_ff_enable = null;
-
-public Plugin myinfo =
-{
-	name = "Reverse FF",
-	author = "RB",
-	description = "Reverses Friendly Fire",
-	version = "1.0",
-	url = "http://www.sourcemod.net/"
+public Plugin myinfo = {
+	name 			= "Reverse FF",
+	author 			= "RB",
+	description 	= "Reverses Friendly Fire",
+	version 		= "1.0",
+	url 			= "http://www.sourcemod.net/"
 };
+
+static	Handle	reverse_ff_enable = null;					//Cvar
+static	Handle	FFTimer[MAXPLAYERS+1]; 						//Used to be able to disable the FF timer when they do more FF
+static	bool	FFActive[MAXPLAYERS+1]; 					//Stores whether players are in a state of friendly firing teammates
+static	int		DamageCache[MAXPLAYERS+1][MAXPLAYERS+1]; 	//Used to temporarily store Friendly Fire Damage between teammates
+static	int		immuneStatus[MAXPLAYERS+1]; 				//Used to store immune status while & after survivor is under attack from SI
+static	int		carryStatus[MAXPLAYERS+1]; 					//Used to store if survivor is being carried by charger
+static	int		pummelStatus[MAXPLAYERS+1]; 				//Used to store if survivor is being pumelled by charger
+static	int		debugMode = 1;								//Used to toggle debug logging
+static	char	sGame[256];									//Game title
 
 public void OnPluginStart() {
 	GetGameFolderName(sGame, sizeof(sGame));
@@ -80,10 +72,13 @@ public void OnClientDisconnect(int client) {
 		Plugin_Handled; = do not apply damage
 */
 public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &weapon, float damageForce[3], float damagePosition[3]) {
-	if (!GetConVarBool(reverse_ff_enable) || GetClientTeam(victim) != GetClientTeam(attacker) || attacker == victim || IsFakeClient(attacker) || IsPlayerIncapped(attacker) || !damage)
+	if (!GetConVarBool(reverse_ff_enable) || !IsValidClient(attacker) || !IsValidClient(victim))
 		return Plugin_Continue;
 	
-	if (immuneStatus[victim] == 1)
+	if (attacker == victim || IsFakeClient(attacker) || !damage || GetClientTeam(victim) != GetClientTeam(attacker) || IsPlayerIncapped(victim))
+		return Plugin_Continue;
+	
+	if (immuneStatus[victim] == 1 || IsPlayerIncapped(attacker))
 		return Plugin_Handled;
 	
 	if (IsFakeClient(victim))
@@ -159,7 +154,7 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 				SetTempHealth(attacker, 0);
 				victimDmgRemaining -= attackerTempHealth;
 				
-				LogDebug("DEBUG 103 - Set %s's temphealth to 1", attackerName);
+				LogDebug("DEBUG 103 - Set %s's temphealth to 0", attackerName);
 				LogDebug("DEBUG 103 - victimDmgRemaining: %d", victimDmgRemaining);
 			}
 		}
@@ -175,13 +170,13 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 			LogDebug("DEBUG 104 - victimDmgRemaining: %d", victimDmgRemaining);
 		}
 		
-		if (victimDmgRemaining >= 1)
+		if (victimDmgRemaining >= 1 && IsPlayerIncapped(attacker))
 		{
 			LogDebug("DEBUG 105 - victimDmgRemaining: %d", victimDmgRemaining);
-			int debugVar = GetClientHealth(attacker) - victimDmgRemaining;
+			int debugVar = 300 - victimDmgRemaining;
 			LogDebug("DEBUG 105 - Set %s's health to %d", attackerName, debugVar);
 			
-			SetEntityHealth(attacker, GetClientHealth(attacker) - victimDmgRemaining);
+			SetEntityHealth(attacker, 300 - victimDmgRemaining);
 			victimDmgRemaining -= victimDmgRemaining;
 			
 			LogDebug("DEBUG 105 - victimDmgRemaining: %d", victimDmgRemaining);
