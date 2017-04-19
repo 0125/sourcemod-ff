@@ -1,3 +1,5 @@
+// disable ff when a victim is targeted by a witch
+
 #include <sourcemod>
 #include <sdkhooks>
 #include <sdktools>
@@ -71,10 +73,10 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 	if (!GetConVarBool(g_cvarReverseFFEnable) || !IsValidClient(attacker) || !IsValidClient(victim))
 		return Plugin_Continue;
 	
-	if (attacker == victim || IsFakeClient(attacker) || !damage || GetClientTeam(victim) != GetClientTeam(attacker) || IsPlayerIncapped(victim))
+	if (attacker == victim || IsFakeClient(attacker) || GetClientTeam(victim) != GetClientTeam(attacker) || IsPlayerIncapped(victim))
 		return Plugin_Continue;
 	
-	if (g_iImmuneStatus[victim] == 1 || IsPlayerIncapped(attacker))
+	if (g_iImmuneStatus[victim] == 1 || IsPlayerIncapped(attacker) || !damage)
 		return Plugin_Handled;
 	
 	if (IsFakeClient(victim))
