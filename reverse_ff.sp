@@ -1,5 +1,3 @@
-// disable ff when a victim is targeted by a witch
-
 #include <sourcemod>
 #include <sdkhooks>
 #include <sdktools>
@@ -79,8 +77,8 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 	if (g_iImmuneStatus[victim] == 1 || IsPlayerIncapped(attacker) || !damage)
 		return Plugin_Handled;
 	
-	if (IsFakeClient(victim))
-		return Plugin_Continue;
+	// if (IsFakeClient(victim))
+	// 	return Plugin_Continue;
 	
 	char attackerWeapon[64];
 	GetClientWeapon(attacker, attackerWeapon, sizeof(attackerWeapon));
@@ -98,86 +96,91 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 	char victimName[128];
 	GetClientName(victim, victimName, sizeof(victimName));
 	
-	// damage inflicted indirectly for example pipebomb or propanetank explosion
+	// ignore damage inflicted indirectly for example pipebomb or propanetank explosion
 	if (StrEqual(g_sGame, "left4dead", false) && !IsValidClient(inflictor)) // L4D2 melee weapons have random high non-client inflictor values
 		return Plugin_Continue;
 	else if (StrEqual(g_sGame, "left4dead2", false) && !StrEqual(attackerWeapon, "weapon_grenade_launcher") && weapon == -1) // L4D1 always has -1 weapon
 		return Plugin_Continue;
-	
+	if(StrEqual(attackerWeapon, "weapon_chainsaw"))
+	{
+		IncapPlayer(attacker);
+		return Plugin_Continue;
+	}
+
 	// Punish the attacker
 	if( IsPlayerAlive(attacker) && IsClientInGame(attacker) )
 	{
-		// PrintToChatAll("'%s' (%d health & %d temphealth) attacked '%s' (%d health & %d temphealth) for %d damage", attackerName, attackerHealth, attackerTempHealth, victimName, victimHealth, victimTempHealth, victimDmg);
+		PrintToChatAll("'%s' (%d health & %d temphealth) attacked '%s' (%d health & %d temphealth) for %d damage", attackerName, attackerHealth, attackerTempHealth, victimName, victimHealth, victimTempHealth, victimDmg);
 		LogDebug("'%s' (%d health & %d temphealth) attacked '%s' (%d health & %d temphealth) for %d damage", attackerName, attackerHealth, attackerTempHealth, victimName, victimHealth, victimTempHealth, victimDmg);
-		
+
 		if (attackerHealth - victimDmgRemaining >= 1)
 		{
-			LogDebug("DEBUG 100 - victimDmgRemaining: %d", victimDmgRemaining);
+			LogDebug("DEBUG 101 - victimDmgRemaining: %d", victimDmgRemaining);
 			int debugVar = attackerHealth - victimDmgRemaining;
-			LogDebug("DEBUG 100 - Set %s's health to %d", attackerName, debugVar);
+			LogDebug("DEBUG 102 - Set %s's health to %d", attackerName, debugVar);
 			
 			SetEntityHealth(attacker, attackerHealth - victimDmgRemaining);
 			victimDmgRemaining -= victimDmgRemaining;
 			
-			LogDebug("DEBUG 100 - victimDmgRemaining: %d", victimDmgRemaining);
+			LogDebug("DEBUG 103 - victimDmgRemaining: %d", victimDmgRemaining);
 		}
 		else if (attackerHealth - victimDmgRemaining < 1)
 		{
-			LogDebug("DEBUG 101 - victimDmgRemaining: %d", victimDmgRemaining);
+			LogDebug("DEBUG 104 - victimDmgRemaining: %d", victimDmgRemaining);
 			
 			SetEntityHealth(attacker, 1);
 			victimDmgRemaining -= attackerHealth - 1;
 			
-			LogDebug("DEBUG 101 - Set %s's health to 1", attackerName);
-			LogDebug("DEBUG 101 - victimDmgRemaining: %d", victimDmgRemaining);
+			LogDebug("DEBUG 105 - Set %s's health to 1", attackerName);
+			LogDebug("DEBUG 106 - victimDmgRemaining: %d", victimDmgRemaining);
 		}
 		
 		if (attackerTempHealth != 0 && victimDmgRemaining >= 1)
 		{
 			if (attackerTempHealth - victimDmgRemaining >= 1)
 			{
-				LogDebug("DEBUG 102 - victimDmgRemaining: %d", victimDmgRemaining);
+				LogDebug("DEBUG 107 - victimDmgRemaining: %d", victimDmgRemaining);
 				int debugVar = attackerTempHealth - victimDmgRemaining;
-				LogDebug("DEBUG 102 - Set %s's temphealth to %d", attackerName, debugVar);
+				LogDebug("DEBUG 108 - Set %s's temphealth to %d", attackerName, debugVar);
 				
 				SetTempHealth(attacker, attackerTempHealth - victimDmgRemaining);
 				victimDmgRemaining -= victimDmgRemaining;
 				
-				LogDebug("DEBUG 102 - victimDmgRemaining: %d", victimDmgRemaining);
+				LogDebug("DEBUG 109 - victimDmgRemaining: %d", victimDmgRemaining);
 			}
 			else if (attackerTempHealth - victimDmgRemaining < 1)
 			{
-				LogDebug("DEBUG 103 - victimDmgRemaining: %d", victimDmgRemaining);
+				LogDebug("DEBUG 110 - victimDmgRemaining: %d", victimDmgRemaining);
 				
 				SetTempHealth(attacker, 0);
 				victimDmgRemaining -= attackerTempHealth;
 				
-				LogDebug("DEBUG 103 - Set %s's temphealth to 0", attackerName);
-				LogDebug("DEBUG 103 - victimDmgRemaining: %d", victimDmgRemaining);
+				LogDebug("DEBUG 111 - Set %s's temphealth to 0", attackerName);
+				LogDebug("DEBUG 112 - victimDmgRemaining: %d", victimDmgRemaining);
 			}
 		}
 		
-		if (victimDmgRemaining >= 1)
+		if (victimDmgRemaining >= 1 && !(StrEqual(attackerWeapon, "weapon_chainsaw"))) // server crashes when incapping with chainsaw equipped
 		{
-			LogDebug("DEBUG 104 - victimDmgRemaining: %d", victimDmgRemaining);
+			LogDebug("DEBUG 113 - victimDmgRemaining: %d", victimDmgRemaining);
 			
 			IncapPlayer(attacker);
 			victimDmgRemaining -= 1;
 			
-			LogDebug("DEBUG 104 - Incapped %s", attackerName);
-			LogDebug("DEBUG 104 - victimDmgRemaining: %d", victimDmgRemaining);
+			LogDebug("DEBUG 114 - Incapped %s", attackerName);
+			LogDebug("DEBUG 115 - victimDmgRemaining: %d", victimDmgRemaining);
 		}
 		
 		if (victimDmgRemaining >= 1 && IsPlayerIncapped(attacker))
 		{
-			LogDebug("DEBUG 105 - victimDmgRemaining: %d", victimDmgRemaining);
+			LogDebug("DEBUG 116 - victimDmgRemaining: %d", victimDmgRemaining);
 			int debugVar = 300 - victimDmgRemaining;
-			LogDebug("DEBUG 105 - Set %s's health to %d", attackerName, debugVar);
+			LogDebug("DEBUG 117 - Set %s's health to %d", attackerName, debugVar);
 			
 			SetEntityHealth(attacker, 300 - victimDmgRemaining);
 			victimDmgRemaining -= victimDmgRemaining;
 			
-			LogDebug("DEBUG 105 - victimDmgRemaining: %d", victimDmgRemaining);
+			LogDebug("DEBUG 118 - victimDmgRemaining: %d", victimDmgRemaining);
 		}
 	}
 	
