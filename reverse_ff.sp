@@ -77,9 +77,6 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 	if (g_iImmuneStatus[victim] == 1 || IsPlayerIncapped(attacker) || !damage)
 		return Plugin_Handled;
 	
-	// if (IsFakeClient(victim))
-	// 	return Plugin_Continue;
-	
 	char attackerWeapon[64];
 	GetClientWeapon(attacker, attackerWeapon, sizeof(attackerWeapon));
 	
@@ -101,11 +98,6 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 		return Plugin_Continue;
 	else if (StrEqual(g_sGame, "left4dead2", false) && !StrEqual(attackerWeapon, "weapon_grenade_launcher") && weapon == -1) // L4D1 always has -1 weapon
 		return Plugin_Continue;
-	if(StrEqual(attackerWeapon, "weapon_chainsaw"))
-	{
-		IncapPlayer(attacker);
-		return Plugin_Continue;
-	}
 
 	// Punish the attacker
 	if( IsPlayerAlive(attacker) && IsClientInGame(attacker) )
