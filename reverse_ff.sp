@@ -71,12 +71,12 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 	if (!GetConVarBool(g_cvarReverseFFEnable) || !IsValidClient(attacker) || !IsValidClient(victim))
 		return Plugin_Continue;
 	
-	if (attacker == victim || IsFakeClient(attacker) || GetClientTeam(victim) != GetClientTeam(attacker) || IsPlayerIncapped(victim))
+	if (attacker == victim || IsFakeClient(attacker) || IsFakeClient(victim) || GetClientTeam(victim) != GetClientTeam(attacker) || IsPlayerIncapped(victim))
 		return Plugin_Continue;
 	
 	if (g_iImmuneStatus[victim] == 1 || IsPlayerIncapped(attacker) || !damage)
 		return Plugin_Handled;
-	
+
 	char attackerWeapon[64];
 	GetClientWeapon(attacker, attackerWeapon, sizeof(attackerWeapon));
 	
@@ -102,7 +102,7 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 	// Punish the attacker
 	if( IsPlayerAlive(attacker) && IsClientInGame(attacker) )
 	{
-		PrintToChatAll("'%s' (%d health & %d temphealth) attacked '%s' (%d health & %d temphealth) for %d damage", attackerName, attackerHealth, attackerTempHealth, victimName, victimHealth, victimTempHealth, victimDmg);
+		if (g_iDebugMode) PrintToChatAll("'%s' (%d health & %d temphealth) attacked '%s' (%d health & %d temphealth) for %d damage", attackerName, attackerHealth, attackerTempHealth, victimName, victimHealth, victimTempHealth, victimDmg);
 		LogDebug("'%s' (%d health & %d temphealth) attacked '%s' (%d health & %d temphealth) for %d damage", attackerName, attackerHealth, attackerTempHealth, victimName, victimHealth, victimTempHealth, victimDmg);
 
 		if (attackerHealth - victimDmgRemaining >= 1)
